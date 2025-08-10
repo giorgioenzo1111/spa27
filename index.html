@@ -17,28 +17,7 @@
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
     
     <!-- Manifest -->
-    <link rel="manifest" href="data:application/manifest+json,{
-        'name': 'Meu SPA PWA',
-        'short_name': 'SPA PWA',
-        'description': 'Single Page Application com suporte a temas e idiomas',
-        'start_url': '/',
-        'display': 'standalone',
-        'background_color': '#ffffff',
-        'theme_color': '#007bff',
-        'orientation': 'portrait-primary',
-        'icons': [
-            {
-                'src': 'data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🌐</text></svg>',
-                'sizes': '192x192',
-                'type': 'image/svg+xml'
-            },
-            {
-                'src': 'data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🌐</text></svg>',
-                'sizes': '512x512',
-                'type': 'image/svg+xml'
-            }
-        ]
-    }">
+    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Meu%20SPA%20PWA%22%2C%22short_name%22%3A%22SPA%20PWA%22%2C%22description%22%3A%22Single%20Page%20Application%20com%20suporte%20a%20temas%20e%20idiomas%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%23007bff%22%2C%22orientation%22%3A%22portrait-primary%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Ctext%2520y%253D%2527.9em%2527%2520font-size%253D%252790%2527%253E%25F0%259F%258C%2590%253C%252Ftext%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%2C%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Ctext%2520y%253D%2527.9em%2527%2520font-size%253D%252790%2527%253E%25F0%259F%258C%2590%253C%252Ftext%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
     <style>
         :root {
             --primary-bg: #ffffff;
@@ -600,46 +579,151 @@
             });
         }
 
-        function registerServiceWorker() {
-            // Create service worker inline
+        function initializePWA() {
+            // Check if app is already installed
+            if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+                pwaStatus.classList.add('show');
+            }
+
+            // Try to register service worker with fallback
+            if ('serviceWorker' in navigator) {
+                // Try inline service worker first, fallback to cache-only approach
+                tryRegisterServiceWorker();
+            }
+
+            // Handle install prompt
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                installButton.classList.add('show');
+            });
+
+            // Install button click
+            installButton.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    
+                    if (outcome === 'accepted') {
+                        console.log('PWA installed');
+                        installButton.classList.remove('show');
+                        pwaStatus.classList.add('show');
+                    }
+                    
+                    deferredPrompt = null;
+                } else {
+                    // Fallback: show manual install instructions
+                    showInstallInstructions();
+                }
+            });
+
+            // Handle app installed
+            window.addEventListener('appinstalled', () => {
+                console.log('PWA was installed');
+                installButton.classList.remove('show');
+                pwaStatus.classList.add('show');
+            });
+
+            // Always show install button for testing
+            setTimeout(() => {
+                if (!pwaStatus.classList.contains('show') && !installButton.classList.contains('show')) {
+                    installButton.classList.add('show');
+                }
+            }, 2000);
+        }
+
+        function tryRegisterServiceWorker() {
+            // Create a minimal service worker that handles caching
             const swCode = `
                 const CACHE_NAME = 'spa-pwa-v1';
-                const urlsToCache = [
-                    '/',
-                    '/index.html'
-                ];
-
+                
                 self.addEventListener('install', (event) => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME)
-                            .then((cache) => cache.addAll(urlsToCache))
-                    );
+                    console.log('Service Worker installing');
+                    self.skipWaiting();
+                });
+
+                self.addEventListener('activate', (event) => {
+                    console.log('Service Worker activating');
+                    event.waitUntil(self.clients.claim());
                 });
 
                 self.addEventListener('fetch', (event) => {
+                    if (event.request.method !== 'GET') return;
+                    
                     event.respondWith(
-                        caches.match(event.request)
-                            .then((response) => {
+                        caches.open(CACHE_NAME).then(cache => {
+                            return cache.match(event.request).then(response => {
                                 if (response) {
                                     return response;
                                 }
-                                return fetch(event.request);
-                            }
-                        )
+                                
+                                return fetch(event.request).then(fetchResponse => {
+                                    if (fetchResponse && fetchResponse.status === 200) {
+                                        cache.put(event.request, fetchResponse.clone());
+                                    }
+                                    return fetchResponse;
+                                }).catch(() => {
+                                    // Return a fallback for navigation requests
+                                    if (event.request.mode === 'navigate') {
+                                        return new Response(
+                                            '<!DOCTYPE html><html><head><title>Offline</title></head><body><h1>App funcionando offline!</h1><p>Esta página foi salva no cache.</p></body></html>',
+                                            { headers: { 'Content-Type': 'text/html' } }
+                                        );
+                                    }
+                                });
+                            });
+                        })
                     );
                 });
             `;
 
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
+            try {
+                // Try blob URL method first
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                
+                navigator.serviceWorker.register(swUrl)
+                    .then((registration) => {
+                        console.log('ServiceWorker registration successful with blob URL');
+                        URL.revokeObjectURL(swUrl);
+                    })
+                    .catch((error) => {
+                        console.log('Blob method failed, trying data URL method');
+                        // Fallback to data URL
+                        const dataUrl = 'data:application/javascript;base64,' + btoa(swCode);
+                        return navigator.serviceWorker.register(dataUrl);
+                    })
+                    .then((registration) => {
+                        if (registration) {
+                            console.log('ServiceWorker registration successful with data URL');
+                        }
+                    })
+                    .catch((error) => {
+                        console.log('ServiceWorker registration failed completely:', error);
+                        // PWA will still work for installation, just without offline support
+                    });
+            } catch (error) {
+                console.log('ServiceWorker not supported or failed:', error);
+            }
+        }
 
-            navigator.serviceWorker.register(swUrl)
-                .then((registration) => {
-                    console.log('ServiceWorker registration successful');
-                })
-                .catch((error) => {
-                    console.log('ServiceWorker registration failed: ', error);
-                });
+        function showInstallInstructions() {
+            const userAgent = navigator.userAgent.toLowerCase();
+            let instructions = '';
+            
+            if (userAgent.includes('chrome') && !userAgent.includes('edg')) {
+                instructions = 'Chrome: Clique nos 3 pontos > "Instalar aplicativo"';
+            } else if (userAgent.includes('firefox')) {
+                instructions = 'Firefox: Clique no ícone de casa na barra de endereço';
+            } else if (userAgent.includes('safari')) {
+                instructions = 'Safari: Clique em "Compartilhar" > "Adicionar à Tela de Início"';
+            } else if (userAgent.includes('edg')) {
+                instructions = 'Edge: Clique nos 3 pontos > "Aplicativos" > "Instalar este site como aplicativo"';
+            } else {
+                instructions = 'Procure por "Adicionar à tela inicial" ou "Instalar aplicativo" no menu do seu navegador';
+            }
+            
+            alert('Para instalar este PWA manualmente:\n\n' + instructions);
         }
     </script>
 </body>
